@@ -4,7 +4,6 @@ attrs==23.1.0
 autopep8==1.6.0
 blinker==1.6.3
 cachetools==5.3.2
-certifi @ file:///private/var/folders/k1/30mswbxs7r1g6zwn8y4fyt500000gp/T/abs_3bweqb8byn/croot/certifi_1690232244779/work/certifi
 charset-normalizer==3.3.1
 click==8.1.7
 dill==0.3.6
@@ -36,7 +35,7 @@ pydocstyle==6.2.3
 pyflakes==3.0.1
 Pygments==2.16.1
 pylint==2.17.0
-PyPDF2 @ file:///private/var/folders/nz/j6p8yfhx1mv_0grj5xl4650h0000gp/T/abs_015o_uq2mh/croots/recipe/pypdf2_1662469690829/work
+PyPDF2 ==2.10.5
 python-dateutil==2.8.2
 python-lsp-jsonrpc==1.0.0
 python-lsp-server==1.7.1
@@ -55,7 +54,6 @@ tenacity==8.2.3
 toml==0.10.2
 toolz==0.12.0
 tornado==6.3.3
-typing_extensions @ file:///private/var/folders/nz/j6p8yfhx1mv_0grj5xl4650h0000gp/T/abs_1fdywrbp_3/croot/typing_extensions_1690297474455/work
 tzdata==2023.3
 tzlocal==5.2
 urllib3==2.0.7
