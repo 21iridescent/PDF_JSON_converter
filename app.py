@@ -1,56 +1,77 @@
 from PyPDF2 import PdfReader
 import json
+import re
+# import wordninja
 import streamlit as st
 
-def convert_outline_to_json(reader, outline):
-    json_data = []
-
+def convert_outline(reader, outline):
+    data = []
     for i, item in enumerate(outline):
-        item = outline[i]
-
         if isinstance(item, dict):
-            json_item = {
-                'title': item.title,
-                'start_page': reader.get_destination_page_number(item)
-            }
-
+            json_item = {'title': item.title,
+                         'start_page': reader.get_destination_page_number(item)}
         next_item = outline[i + 1] if i + 1 < len(outline) else None
         if isinstance(next_item, list):
-            json_item['children'] = convert_outline_to_json(reader, next_item)
+            json_item['children'] = convert_outline(reader, next_item)
             continue
-
-        json_data.append(json_item)
-
-    return json_data
+        data.append(json_item)
+    return data
 
 def calculate_end_pages(reader, data, parent_end_page=None):
-    for i, section in enumerate(data):
-        section['end_page'] = data[i + 1]['start_page'] if i + 1 < len(data) else parent_end_page
-
-        if section['end_page'] is None:
-            section['end_page'] = len(reader.pages) - 1
-
-        if 'children' in section:
-            calculate_end_pages(reader, section['children'], section['end_page'])
+    for i, item in enumerate(data):
+        item['end_page'] = data[i + 1]['start_page'] if i + 1 < len(data) else parent_end_page
+        if item['end_page'] is None:
+            item['end_page'] = len(reader.pages) - 1
+        if 'children' in item:
+            calculate_end_pages(reader, item['children'], item['end_page'])
 
 def extract_page_range_content(reader, start_page, end_page):
     content = ''
-
     for page_num in range(start_page, end_page + 1):
         content += reader.pages[page_num].extract_text()
-
     return content
 
 def populate_content(reader, data):
-    for section in data:
-        if 'children' in section:
-            populate_content(reader, section['children'])
+    for item in data:
+        if 'children' in item:
+            populate_content(reader, item['children'])
             continue
+        item['content'] = extract_page_range_content(reader, item['start_page'], item['end_page'])
 
-        try:
-            section['content'] = extract_page_range_content(reader, section['start_page'], section['end_page'])
-        except Exception as e:
-            st.write(f"An error occurred: {str(e)}")
+def transform_into_paragraphs(data, parent_title=None):
+    result = []
+    for item in data:
+        title = item['title']
+        content = item.get('content')
+        if content:
+            json_item = {'section_title': title,
+			 'parent_section_title': parent_title if parent_title is not None else '',
+                         'content': content}
+            if not parent_title:
+                json_item.pop('parent_section_title', None)
+            result.append(json_item)
+        if 'children' in item:
+            result.extend(transform_into_paragraphs(item['children'], title))
+    return result
+
+def remove_line_feeds(data):
+    for item in data:
+        content = item['content']
+        content = re.sub(r'-\n', '', content)
+        content = re.sub(r'\n', ' ', content)
+        item['content'] = content
+
+# def remove_spaces(data):
+#     for item in data:
+#         content = item['content']
+#         content = re.sub(r' ', '', content)
+#         item['content'] = content
+
+# def separate_words(data):
+#     for item in data:
+#         text = item['content']
+#         words = wordninja.split(text)
+#         item['content'] = ' '.join(words)
 
 def main():
     st.title("Attributes education knowledge graph PDF to JSON Converter")
@@ -69,9 +90,16 @@ def main():
             reader = PdfReader(uploaded_file)
             outline = reader.outline
 
-            json_data = convert_outline_to_json(reader, outline)
-            calculate_end_pages(reader, json_data)
-            populate_content(reader, json_data)
+            textbook = convert_outline(reader, outline)
+            calculate_end_pages(reader, textbook)
+            populate_content(reader, textbook)
+
+            paragraphs = transform_into_paragraphs(textbook)
+            remove_line_feeds(paragraphs)
+            # remove_spaces(paragraphs)
+            # separate_words(paragraphs)
+            
+            json_data = paragraphs
 
         st.success("PDF processed successfully!")
 
@@ -83,7 +111,6 @@ def main():
         with col2:
             if st.button("Show JSON data"):
                 st.text_area("JSON Content", json_str, height=300)
-
 
             st.download_button(
                 label="Download JSON",
