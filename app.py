@@ -1,8 +1,13 @@
 from PyPDF2 import PdfReader
-import json
+from pdfminer.high_level import extract_pages
+from pdfminer.layout import LTTextContainer, LAParams
+from cleantext import clean
 import re
-# import wordninja
+import wordninja
+import json
 import streamlit as st
+
+laparams = LAParams(line_overlap=0.25)
 
 def convert_outline(reader, outline):
     data = []
@@ -25,53 +30,79 @@ def calculate_end_pages(reader, data, parent_end_page=None):
         if 'children' in item:
             calculate_end_pages(reader, item['children'], item['end_page'])
 
-def extract_page_range_content(reader, start_page, end_page):
-    content = ''
-    for page_num in range(start_page, end_page + 1):
-        content += reader.pages[page_num].extract_text()
-    return content
+# def extract_page_range_content(start_page, end_page):
+#     content = ''
+#     for page_num in range(start_page, end_page + 1):
+#         content += reader.pages[page_num].extract_text()
+#     return content
 
-def populate_content(reader, data):
+def extract_page_range_content(pdf_path, start_page, end_page):
+    # print(f"Extracting content from between p.{start_page} and p.{end_page}")
+    with st.spinner(f"Extracting content from between p.{start_page} and p.{end_page}"):
+        content = ''
+        page_numbers = range(start_page, end_page + 1)
+        for page_layout in extract_pages(pdf_path, page_numbers=page_numbers, laparams=laparams):
+            for element in page_layout:
+                if isinstance(element, LTTextContainer):
+                    content += element.get_text() + '\n\n'
+        return content
+
+def populate_content(pdf_path, data):
     for item in data:
         if 'children' in item:
-            populate_content(reader, item['children'])
+            populate_content(pdf_path, item['children'])
             continue
-        item['content'] = extract_page_range_content(reader, item['start_page'], item['end_page'])
+        item['content'] = extract_page_range_content(pdf_path, item['start_page'], item['end_page'])
 
-def transform_into_paragraphs(data, parent_title=None):
+def transform(data, parent_title=None):
     result = []
     for item in data:
         title = item['title']
         content = item.get('content')
         if content:
             json_item = {'section_title': title,
-			 'parent_section_title': parent_title if parent_title is not None else '',
                          'content': content}
-            if not parent_title:
-                json_item.pop('parent_section_title', None)
+            if parent_title:
+                json_item['parent_section_title'] = parent_title
             result.append(json_item)
         if 'children' in item:
-            result.extend(transform_into_paragraphs(item['children'], title))
+            result.extend(transform(item['children'], title))
     return result
 
-def remove_line_feeds(data):
+def separate_into_paragraphs(data):
+    result = []
+    for item in data:
+        paragraphs = item['content'].split('\n\n')
+        for paragraph in paragraphs:
+            json_item = {
+                'section_title': item['section_title'],
+                'content': paragraph.strip()
+            }
+            if 'parent_section_title' in item:
+                json_item['parent_section_title'] = item['parent_section_title']
+            result.append(json_item)
+    return result
+
+def remove_noises(data):
+    data[:] = [item for item in data if len(item['content']) >= 32 and len(item['content'].split()) >= 8]
+
+def clean_text(data):
     for item in data:
         content = item['content']
-        content = re.sub(r'-\n', '', content)
-        content = re.sub(r'\n', ' ', content)
+        content = clean(content, no_line_breaks=True, no_urls=True, no_emails=True, no_punct=True)
         item['content'] = content
 
-# def remove_spaces(data):
-#     for item in data:
-#         content = item['content']
-#         content = re.sub(r' ', '', content)
-#         item['content'] = content
+def remove_spaces(data):
+    for item in data:
+        content = item['content']
+        content = re.sub(r' ', '', content)
+        item['content'] = content
 
-# def separate_words(data):
-#     for item in data:
-#         text = item['content']
-#         words = wordninja.split(text)
-#         item['content'] = ' '.join(words)
+def separate_words(data):
+    for item in data:
+        text = item['content']
+        words = wordninja.split(text)
+        item['content'] = ' '.join(words)
 
 def main():
     st.title("Attributes education knowledge graph PDF to JSON Converter")
@@ -90,14 +121,18 @@ def main():
             reader = PdfReader(uploaded_file)
             outline = reader.outline
 
-            textbook = convert_outline(reader, outline)
-            calculate_end_pages(reader, textbook)
-            populate_content(reader, textbook)
+            with st.spinner('Extracing content...'):
+                textbook = convert_outline(reader, outline)
+                calculate_end_pages(reader, textbook)
+                populate_content(uploaded_file, textbook)
 
-            paragraphs = transform_into_paragraphs(textbook)
-            remove_line_feeds(paragraphs)
-            # remove_spaces(paragraphs)
-            # separate_words(paragraphs)
+            with st.spinner('Processing extracted content...'):
+                textbook = transform(textbook)
+                paragraphs = separate_into_paragraphs(textbook)
+                remove_noises(paragraphs)
+                clean_text(paragraphs)
+                remove_spaces(paragraphs)
+                separate_words(paragraphs)
             
             json_data = paragraphs
 
