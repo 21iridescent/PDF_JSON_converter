@@ -9,6 +9,24 @@ import streamlit as st
 
 laparams = LAParams(line_overlap=0.25)
 
+import re
+
+def clean_title(title):
+    cleaned_title = re.sub(r'^\s*(Chapter|Section)?\s*\d*\.?\d*\s*-*\s*', '', title, flags=re.IGNORECASE)
+
+    if '-' in cleaned_title:
+        parts = cleaned_title.split('-')
+        cleaned_title = parts[-1] if len(parts[-1].strip()) > 3 else cleaned_title
+
+    cleaned_title = cleaned_title.strip()
+
+    # Fallback to original title if cleaned title becomes too short, indicating over-cleaning
+    if len(cleaned_title) < 3:
+        cleaned_title = title.strip()
+
+    return cleaned_title
+
+
 def convert_outline(reader, outline):
     data = []
     for i, item in enumerate(outline):
@@ -57,13 +75,13 @@ def populate_content(pdf_path, data):
 def transform(data, parent_title=None):
     result = []
     for item in data:
-        title = item['title']
+        title = clean_title(item['title'])
         content = item.get('content')
         if content:
-            json_item = {'section_title': title,
-                         'content': content}
+            json_item = {'section_title': title, 'content': content}
             if parent_title:
-                json_item['parent_section_title'] = parent_title
+                clean_parent_title = clean_title(parent_title)
+                json_item['parent_section_title'] = clean_parent_title
             result.append(json_item)
         if 'children' in item:
             result.extend(transform(item['children'], title))
